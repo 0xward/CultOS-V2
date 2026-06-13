@@ -20,6 +20,7 @@ import {
   subscribeGlobalStats,
   subscribeLiveLeaderboard,
   fetchStakingStats,
+  fetchOnChainDeploymentCount,
   type LiveCultEntry,
   type GlobalStats,
   type LeaderboardEntry,
@@ -1005,9 +1006,14 @@ function RitualAltarPanel({ walletAddress, addLog }: { walletAddress: string | n
 
   // Real staking stats from Stacks contract (or fallback)
   const [stakingStats, setStakingStats] = useState<{ totalLocked: number; stakerCount: number; rewardsPool: number } | null>(null);
+  const [onChainDeployments, setOnChainDeployments] = useState<number>(0);
   useEffect(() => {
     fetchStakingStats().then(setStakingStats).catch(() => {});
-    const interval = setInterval(() => fetchStakingStats().then(setStakingStats).catch(() => {}), 60_000);
+    fetchOnChainDeploymentCount().then(setOnChainDeployments).catch(() => {});
+    const interval = setInterval(() => {
+      fetchStakingStats().then(setStakingStats).catch(() => {});
+      fetchOnChainDeploymentCount().then(setOnChainDeployments).catch(() => {});
+    }, 60_000);
     return () => clearInterval(interval);
   }, []);
 
@@ -1239,7 +1245,7 @@ function RitualAltarPanel({ walletAddress, addLog }: { walletAddress: string | n
           ["TOTAL VALUE LOCKED",    `${estimatedTVL} $CULTOS`],
           ["ACTIVE STAKERS",        activeStakers.toString()],
           ["DAILY REWARDS POOL",    `${dailyRewardsPool} $CULTOS`],
-          ["TOTAL DEPLOYMENTS",     totalDeployments > 0 ? totalDeployments.toString() : "100+"],
+          ["TOTAL DEPLOYMENTS",     onChainDeployments > 0 ? onChainDeployments.toString() : totalDeployments > 0 ? totalDeployments.toString() : "—"],
           ["AVG VIRAL SCORE",       avgViralScore > 0 ? avgViralScore.toFixed(1) : "73.0"],
           ["$CultOS TOKEN",          "SPQ189E...CultOS"],
           ["STAKING CONTRACT",       STAKING_CONTRACT ? STAKING_CONTRACT.slice(0,18)+"..." : "PENDING DEPLOY"],
