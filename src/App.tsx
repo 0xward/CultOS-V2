@@ -1353,9 +1353,15 @@ function AppView({ onBack }: { onBack: () => void }) {
     if (walletAddress) {
       pushDeploymentToFeed(cult, walletAddress)
         .then(pushed => {
-          if (pushed) addLog(`CODEX_FEED: PROPAGATED_TO_GLOBAL_CHAIN`);
+          if (pushed) {
+            addLog(`CODEX_FEED: PROPAGATED_TO_GLOBAL_CHAIN`);
+          } else {
+            addLog(`CODEX_FEED: FIREBASE_PUSH_FAILED // CHECK_CONFIG`);
+          }
         })
-        .catch(() => {/* silent fail */});
+        .catch((err: any) => {
+          addLog(`CODEX_FEED: ERROR // ${err?.message?.slice(0,40) || 'UNKNOWN'}`);
+        });
     }
   };
 
