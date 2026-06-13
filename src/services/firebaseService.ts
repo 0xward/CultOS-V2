@@ -390,19 +390,19 @@ export async function fetchStakingStats(): Promise<{
     // Clarity read-only returns: { okay: true, result: "0x070000000000000000000000000000000a" }
     // Format: 0x07 = ok prefix, then 16-byte big-endian uint
     const parseClarityUint = (data: any): number => {
-      try {
-        const result: string = data?.result ?? '';
-        // Strip leading ok-prefix byte (0x07) if present
-        const hex = result.replace(/^0x(07)?0*/, '') || '0';
-        // Use BigInt to avoid float precision issues, then convert safely
-        const big = BigInt('0x' + (hex || '0'));
-        // Cap at safe JS number range
-        if (big > BigInt(Number.MAX_SAFE_INTEGER)) return 0;
-        return Number(big);
-      } catch {
-        return 0;
-      }
-    };
+  try {
+    const result: string = data?.result ?? '';
+    if (!result || result === '0x') return 0;
+    // Clarity ok(uint) = 0x01 + 0x01 + 16 bytes
+    const hex = result.replace(/^0x/, '').slice(4);
+    const stripped = hex.replace(/^0+/, '') || '0';
+    const big = BigInt('0x' + stripped);
+    if (big > BigInt(Number.MAX_SAFE_INTEGER)) return 0;
+    return Number(big);
+  } catch {
+    return 0;
+  }
+};
 
     const totalLockedMicro = parseClarityUint(lockedData);
     const stakerCount      = parseClarityUint(countData);
