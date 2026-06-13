@@ -395,12 +395,11 @@ export async function fetchStakingStats(): Promise<{
     // Clarity read-only returns: { okay: true, result: "0x070000000000000000000000000000000a" }
     // Format: 0x07 = ok prefix, then 16-byte big-endian uint
     const parseClarityUint = (data: any): number => {
-      try {
-        const result: string = data?.result ?? '';
-        // Strip leading ok-prefix byte (0x07) if present
-        const hex = result.replace(/^0x(07)?0*/, '') || '0';
-        // Use BigInt to avoid float precision issues, then convert safely
-        const big = BigInt('0x' + (hex || '0'));
+  try {
+    const result: string = data?.result ?? '';
+    if (!result || result === '0x') return 0;
+    // Format: 0x07(ResponseOk) + 01(UInt type) + 16 bytes = skip 6 hex chars
+    const hex = result.replace(/^0x/, '').slice(6);
         // Cap at safe JS number range
         if (big > BigInt(Number.MAX_SAFE_INTEGER)) return 0;
         return Number(big);
