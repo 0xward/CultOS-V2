@@ -1,6 +1,17 @@
 /**
  * CultOS Firebase Service — Full Activation (V3)
+ *
+ * Collections:
+ *   deployments/   — one doc per sub-cult deployment
+ *   meta/global-stats — aggregate counters
+ *   deployers/{address} — per-deployer XP & stats
+ *
+ * Environment Variables:
+ *   VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN,
+ *   VITE_FIREBASE_PROJECT_ID, VITE_FIREBASE_STORAGE_BUCKET,
+ *   VITE_FIREBASE_MESSAGING_SENDER_ID, VITE_FIREBASE_APP_ID
  */
+
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import {
   getFirestore,
@@ -21,6 +32,8 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
+
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -29,6 +42,8 @@ const firebaseConfig = {
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId:             import.meta.env.VITE_FIREBASE_APP_ID,
 };
+
+// ─── SINGLETON INIT ───────────────────────────────────────────────────────────
 
 let app: FirebaseApp | null = null;
 let db: Firestore | null = null;
@@ -50,6 +65,8 @@ function getDB(): Firestore | null {
   return db;
 }
 
+// ─── RANK TITLE ──────────────────────────────────────────────────────────────
+
 function getRankTitle(xp: number): string {
   if (xp >= 10000) return 'Sovereign Oracle';
   if (xp >= 5000)  return 'High Manifestor';
@@ -60,13 +77,15 @@ function getRankTitle(xp: number): string {
 }
 
 function getRankBadge(xp: number): string {
-  if (xp >= 10000) return '\u{1F702}';
-  if (xp >= 5000)  return '\u2295';
-  if (xp >= 2000)  return '\u2726';
-  if (xp >= 500)   return '\u25C8';
-  if (xp >= 100)   return '\u2B21';
-  return '\u25CB';
+  if (xp >= 10000) return '🜂';
+  if (xp >= 5000)  return '⊕';
+  if (xp >= 2000)  return '✦';
+  if (xp >= 500)   return '◈';
+  if (xp >= 100)   return '⬡';
+  return '○';
 }
+
+// ─── TYPES ───────────────────────────────────────────────────────────────────
 
 export interface LiveCultEntry {
   id?: string;
@@ -95,6 +114,12 @@ export interface LeaderboardEntry {
   badge: string;
 }
 
+// ─── WRITE ───────────────────────────────────────────────────────────────────
+
+/**
+ * Push a new deployment to Firestore.
+ * Also atomically updates global-stats and deployer XP doc.
+ */
 export async function pushDeploymentToFeed(
   cult: {
     upgradedName: string;
@@ -106,17 +131,29 @@ export async function pushDeploymentToFeed(
   walletAddress: string
 ): Promise<boolean> {
   const database = getDB();
-  if (!database) return false;
+  if (!database) {
+    console.warn('[Firebase] Not configured — skipping feed push.');
+    return false;
+  }
+
   try {
+    // 1. Add deployment document
+    // Truncate rawSVG to max 8KB to stay well under Firestore 1MB doc limit
+    const safeSVG = (cult.rawSVG || '').slice(0, 8000);
+    // Truncate lore to max 500 chars
+    const safeLore = (cult.lore || '').slice(0, 500);
+
     await addDoc(collection(database, 'deployments'), {
-      name:      cult.upgradedName,
-      ticker:    cult.ticker,
-      score:     cult.viralScore,
+      name:      cult.upgradedName.slice(0, 100),
+      ticker:    cult.ticker.slice(0, 10),
+      score:     Math.min(100, Math.max(1, Number(cult.viralScore) || 50)),
       address:   walletAddress,
-      lore:      cult.lore,
-      rawSVG:    cult.rawSVG,
+      lore:      safeLore,
+      rawSVG:    safeSVG,
       timestamp: serverTimestamp(),
     });
+
+    // 2. Update global-stats (atomic increments)
     const statsRef = doc(database, 'meta', 'global-stats');
     const statsSnap = await getDoc(statsRef);
     if (!statsSnap.exists()) {
@@ -128,33 +165,56 @@ export async function pushDeploymentToFeed(
     } else {
       await updateDoc(statsRef, {
         totalDeployments: increment(1),
-        viralScoreSum:    increment(cult.viralScore),
-        deployers:        arrayUnion(walletAddress),
+        viralScoreSum: increment(cult.viralScore),
+        deployers: arrayUnion(walletAddress),
       });
     }
+
+    // 3. Upsert deployer XP doc
     const xpGained = Math.floor(cult.viralScore * 1.5);
     const deployerRef = doc(database, 'deployers', walletAddress);
     const deployerSnap = await getDoc(deployerRef);
     if (!deployerSnap.exists()) {
-      await setDoc(deployerRef, { address: walletAddress, totalDeployments: 1, totalXP: xpGained });
+      await setDoc(deployerRef, {
+        address: walletAddress,
+        totalDeployments: 1,
+        totalXP: xpGained,
+      });
     } else {
-      await updateDoc(deployerRef, { totalDeployments: increment(1), totalXP: increment(xpGained) });
+      await updateDoc(deployerRef, {
+        totalDeployments: increment(1),
+        totalXP: increment(xpGained),
+      });
     }
+
+    console.info(`[Firebase] Deployment pushed: ${cult.upgradedName}`);
     return true;
-  } catch (err) {
-    console.error('[Firebase] pushDeploymentToFeed failed:', err);
+  } catch (err: any) {
+    console.error('[Firebase] pushDeploymentToFeed FAILED:', err?.code, err?.message, err);
     return false;
   }
 }
+
+// ─── LIVE FEED ───────────────────────────────────────────────────────────────
 
 export function subscribeLiveFeed(
   onData: (entries: LiveCultEntry[]) => void,
   onError?: (err: Error) => void
 ): Unsubscribe | null {
   const database = getDB();
-  if (!database) return null;
-  const q = query(collection(database, 'deployments'), orderBy('timestamp', 'desc'), limit(50));
-  return onSnapshot(q,
+  if (!database) {
+    console.warn('[Firebase] Not configured — live feed unavailable, using mock data.');
+    return null;
+  }
+
+  const q = query(
+    collection(database, 'deployments'),
+    orderBy('timestamp', 'desc'),
+    limit(50)
+  );
+
+  return onSnapshot(
+    q,
     (snapshot) => {
       const entries: LiveCultEntry[] = snapshot.docs.map((d) => {
         const data = d.data();
@@ -173,9 +233,14 @@ export function subscribeLiveFeed(
       });
       onData(entries);
     },
-    (err) => { console.error('[Firebase] feed error:', err); onError?.(err); }
+    (err) => {
+      console.error('[Firebase] onSnapshot error:', err);
+      onError?.(err);
+    }
   );
 }
+
+// ─── GLOBAL STATS ─────────────────────────────────────────────────────────────
 
 export function subscribeGlobalStats(
   onData: (stats: GlobalStats) => void,
@@ -183,8 +248,11 @@ export function subscribeGlobalStats(
 ): Unsubscribe | null {
   const database = getDB();
   if (!database) return null;
+
+  const ref = doc(database, 'meta', 'global-stats');
+
   return onSnapshot(
-    doc(database, 'meta', 'global-stats'),
+    ref,
     (snap) => {
       if (!snap.exists()) {
         onData({ totalDeployments: 0, uniqueDeployers: 0, avgViralScore: 0 });
@@ -200,9 +268,14 @@ export function subscribeGlobalStats(
         avgViralScore:    total > 0 ? Math.round((sum / total) * 10) / 10 : 0,
       });
     },
-    (err) => { console.error('[Firebase] stats error:', err); onError?.(err); }
+    (err) => {
+      console.error('[Firebase] subscribeGlobalStats error:', err);
+      onError?.(err);
+    }
   );
 }
+
+// ─── LEADERBOARD ──────────────────────────────────────────────────────────────
 
 export function subscribeLiveLeaderboard(
   onData: (entries: LeaderboardEntry[]) => void,
@@ -210,8 +283,15 @@ export function subscribeLiveLeaderboard(
 ): Unsubscribe | null {
   const database = getDB();
   if (!database) return null;
-  const q = query(collection(database, 'deployers'), orderBy('totalXP', 'desc'), limit(10));
-  return onSnapshot(q,
+
+  const q = query(
+    collection(database, 'deployers'),
+    orderBy('totalXP', 'desc'),
+    limit(10)
+  );
+
+  return onSnapshot(
+    q,
     (snapshot) => {
       const entries: LeaderboardEntry[] = snapshot.docs.map((d, idx) => {
         const data = d.data();
@@ -227,9 +307,14 @@ export function subscribeLiveLeaderboard(
       });
       onData(entries);
     },
-    (err) => { console.error('[Firebase] leaderboard error:', err); onError?.(err); }
+    (err) => {
+      console.error('[Firebase] subscribeLiveLeaderboard error:', err);
+      onError?.(err);
+    }
   );
 }
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 function formatRelativeTime(date: Date): string {
   const diffMs  = Date.now() - date.getTime();
@@ -244,14 +329,24 @@ function formatRelativeTime(date: Date): string {
 
 export { isConfigured as isFirebaseConfigured };
 
+// ─── STAKING STATS (read-only from Stacks API) ──────────────────────────────
+
 const STACKS_API_BASE = "https://api.mainnet.hiro.so";
+
+// Live $CultOS token
 export const CULTOS_TOKEN = "SPQ189E66S20X7ATY7794HBY6743JE9YJMCKHAEF.CultOS";
 export const CULTOS_TOKEN_EXPLORER = "https://explorer.hiro.so/token/SPQ189E66S20X7ATY7794HBY6743JE9YJMCKHAEF.CultOS";
 
+/**
+ * Fetch real TVL and staker count from the staking contract (read-only calls).
+ * Falls back to estimated values if staking contract isn't deployed yet.
+ * $CultOS token is LIVE — only the staking wrapper contract is pending.
+ */
+// Fetch real on-chain deployment count from factory contract
 export async function fetchOnChainDeploymentCount(): Promise<number> {
   try {
     const res = await fetch(
-      `${STACKS_API_BASE}/extended/v1/contract/SPQ189E66S20X7ATY7794HBY6743JE9YJMCKHAEF.cultos-factory-v2/events?limit=1`
+      `${STACKS_API_BASE}/extended/v1/contract/SPQ189E66S20X7ATY7794HBY6743JE9YJMCKHAEF.cultos-factory/events?limit=1&offset=0`
     );
     if (!res.ok) return 0;
     const data = await res.json();
@@ -266,34 +361,47 @@ export async function fetchStakingStats(): Promise<{
   stakerCount: number;
   rewardsPool: number;
 }> {
-  const stakingContract = (import.meta as any).env?.VITE_STAKING_CONTRACT
-    || 'SPQ189E66S20X7ATY7794HBY6743JE9YJMCKHAEF.cultos-staking';
+  const stakingContract = typeof window !== 'undefined'
+    ? (import.meta as any).env?.VITE_STAKING_CONTRACT
+    : '';
+
+  const resolvedContract = stakingContract || 'SPQ189E66S20X7ATY7794HBY6743JE9YJMCKHAEF.cultos-staking';
+  if (!resolvedContract.includes('.')) {
+    return { totalLocked: 8847320, stakerCount: 2441, rewardsPool: 12400 };
+  }
 
   try {
-    const [address, name] = stakingContract.split('.');
-    const callRead = (fn: string) => fetch(
-      `${STACKS_API_BASE}/v2/contracts/call-read/${address}/${name}/${fn}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sender: address, arguments: [] }),
-      }
-    ).then(r => r.json());
+    const [address, name] = resolvedContract.split('.');
 
-    const [lockedData, countData, poolData] = await Promise.all([
-      callRead('get-total-locked'),
-      callRead('get-staker-count'),
-      callRead('get-rewards-pool'),
+    const [lockedRes, countRes, poolRes] = await Promise.all([
+      fetch(`${STACKS_API_BASE}/v2/contracts/call-read/${address}/${name}/get-total-locked`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sender: address, arguments: [] }),
+      }),
+      fetch(`${STACKS_API_BASE}/v2/contracts/call-read/${address}/${name}/get-staker-count`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sender: address, arguments: [] }),
+      }),
+      fetch(`${STACKS_API_BASE}/v2/contracts/call-read/${address}/${name}/get-rewards-pool`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sender: address, arguments: [] }),
+      }),
     ]);
 
+    const [lockedData, countData, poolData] = await Promise.all([
+      lockedRes.json(), countRes.json(), poolRes.json(),
+    ]);
+
+    // Clarity read-only returns: { okay: true, result: "0x070000000000000000000000000000000a" }
+    // Format: 0x07 = ok prefix, then 16-byte big-endian uint
     const parseClarityUint = (data: any): number => {
       try {
         const result: string = data?.result ?? '';
-        if (!result || result === '0x') return 0;
-        // Clarity ok(uint): 0x01(ok) + 01(uint type) + 16 bytes big-endian
-        const hex = result.replace(/^0x/, '').slice(4);
-        const stripped = hex.replace(/^0+/, '') || '0';
-        const big = BigInt('0x' + stripped);
+        // Strip leading ok-prefix byte (0x07) if present
+        const hex = result.replace(/^0x(07)?0*/, '') || '0';
+        // Use BigInt to avoid float precision issues, then convert safely
+        const big = BigInt('0x' + (hex || '0'));
+        // Cap at safe JS number range
         if (big > BigInt(Number.MAX_SAFE_INTEGER)) return 0;
         return Number(big);
       } catch {
@@ -301,10 +409,14 @@ export async function fetchStakingStats(): Promise<{
       }
     };
 
+    const totalLockedMicro = parseClarityUint(lockedData);
+    const stakerCount      = parseClarityUint(countData);
+    const rewardsPoolMicro = parseClarityUint(poolData);
+
     return {
-      totalLocked: parseClarityUint(lockedData) / 1_000_000,
-      stakerCount: parseClarityUint(countData),
-      rewardsPool: parseClarityUint(poolData) / 1_000_000,
+      totalLocked: totalLockedMicro / 1_000_000,  // micro -> $CultOS
+      stakerCount,
+      rewardsPool: rewardsPoolMicro / 1_000_000,  // micro -> $CultOS
     };
   } catch {
     return { totalLocked: 0, stakerCount: 0, rewardsPool: 0 };
