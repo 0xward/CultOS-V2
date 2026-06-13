@@ -341,7 +341,7 @@ export const CULTOS_TOKEN_EXPLORER = "https://explorer.hiro.so/token/SPQ189E66S2
 export async function fetchOnChainDeploymentCount(): Promise<number> {
   try {
     const res = await fetch(
-      `${STACKS_API_BASE}/extended/v1/contract/SPQ189E66S20X7ATY7794HBY6743JE9YJMCKHAEF.cultos-factory/events?limit=1&offset=0`
+  `${STACKS_API_BASE}/extended/v1/address/SPQ189E66S20X7ATY7794HBY6743JE9YJMCKHAEF.cultos-factory-v2/transactions?limit=1`
     );
     if (!res.ok) return 0;
     const data = await res.json();
