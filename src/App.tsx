@@ -1100,14 +1100,24 @@ function RitualAltarPanel({ walletAddress, addLog }: { walletAddress: string | n
   const totalDeployments = stats?.totalDeployments ?? 0;
   const uniqueDeployers  = stats?.uniqueDeployers  ?? 0;
   const avgViralScore    = stats?.avgViralScore    ?? 0;
-  // Use real staking contract data if available, otherwise estimate from Firebase stats
-  const realTVL          = stakingStats?.totalLocked  ?? (totalDeployments > 0 ? totalDeployments * 3200 : 8847320);
-  const realStakers      = stakingStats?.stakerCount  ?? (uniqueDeployers > 0 ? uniqueDeployers : 2441);
-  const realRewardsPool  = stakingStats?.rewardsPool  ?? (totalDeployments > 0 ? totalDeployments * 124 : 12400);
-  const estimatedTVL     = realTVL.toLocaleString();
+
+  // Format number: if >= 1M show as "1.2M", if >= 1K show as "12.3K", else plain
+  const fmtTokens = (n: number): string => {
+    if (!n || n <= 0) return "0";
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + "M";
+    if (n >= 1_000)     return (n / 1_000).toFixed(1) + "K";
+    return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  };
+
+  // Use real staking contract data if available and valid
+  const hasRealStaking   = stakingStats !== null;
+  const realTVL          = hasRealStaking ? (stakingStats!.totalLocked  ?? 0) : 0;
+  const realStakers      = hasRealStaking ? (stakingStats!.stakerCount  ?? 0) : 0;
+  const realRewardsPool  = hasRealStaking ? (stakingStats!.rewardsPool  ?? 0) : 0;
+  const estimatedTVL     = fmtTokens(realTVL);
   const activeStakers    = realStakers;
-  const dailyRewardsPool = realRewardsPool.toLocaleString();
-  const isRealStakingData = !!stakingStats;
+  const dailyRewardsPool = fmtTokens(realRewardsPool);
+  const isRealStakingData = hasRealStaking;
 
   return (
     <div style={{ height: "100%", overflowY: "auto", scrollbarWidth: "none", display: "flex", flexDirection: "column", gap: 16 }}>
