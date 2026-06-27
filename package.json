@@ -11,6 +11,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@0xward/cultos-utils": "^1.2.0",
     "firebase": "^11.0.0",
     "@stacks/connect": "^8.2.6",
     "@stacks/network": "^7.3.1",
