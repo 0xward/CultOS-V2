@@ -27,7 +27,13 @@ import {
   type LeaderboardEntry,
 } from "./services/firebaseService";
 import { sanitizeSVG } from "./lib/sanitizeSVG";
+import { CultOSUtils } from "@0xward/cultos-utils";
 import MissionGame from "./components/MissionGame";
+
+// ─── CULTOS UTILS ─────────────────────────────────────────────────────────────
+// Shared utility layer: fee calculation, field sanitization, viral score rating.
+// Package: https://www.npmjs.com/package/@0xward/cultos-utils
+const _utils = new CultOSUtils({ network: "mainnet" });
 
 // ─── PALETTE ─────────────────────────────────────────────────────────────────
 const P = {
@@ -1064,9 +1070,7 @@ function ManifestationChamber({ onDeploy, walletAddress, terminalLogs, addLog, i
     }
     if (!result || isDeploying) return;
 
-    const feeFloat  = 0.05 + (result.viralScore / 100) * 0.1;
-    const feeSTXStr = feeFloat.toFixed(3);
-    const microSTX  = Math.round(feeFloat * 1_000_000);
+    const { feeSTX: feeSTXStr, microSTX } = _utils.calcDeployFee(result.viralScore);
 
     const FACTORY = import.meta.env.VITE_FACTORY_CONTRACT
       || "SPQ189E66S20X7ATY7794HBY6743JE9YJMCKHAEF.cultos-factory-v2";
@@ -1083,12 +1087,7 @@ function ManifestationChamber({ onDeploy, walletAddress, terminalLogs, addLog, i
 
     setIsDeploying(true);
     try {
-      const sanitize = (str: string, max: number) =>
-        str.replace(/[^ -~]/g, "").slice(0, max).trim();
-
-      const safeName   = sanitize(result.upgradedName, 64);
-      const safeTicker = sanitize(result.ticker, 8);
-      const safeLore   = sanitize(result.lore || "", 490);
+      const { safeName, safeTicker, safeLore } = _utils.sanitizeOracleResult(result);
 
       if (!safeName || !safeTicker) {
         addLog("ERROR: NAME_OR_TICKER_INVALID // TRY_REGENERATE");
@@ -1131,7 +1130,7 @@ function ManifestationChamber({ onDeploy, walletAddress, terminalLogs, addLog, i
     }
   };
 
-  const feeSTX = result ? (0.1 + (result.viralScore / 100) * 0.2).toFixed(2) : "0.10";
+  const feeSTX = result ? _utils.calcDeployFee(result.viralScore).feeSTX : "0.050";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: 12 }}>
@@ -1247,7 +1246,7 @@ function ManifestationChamber({ onDeploy, walletAddress, terminalLogs, addLog, i
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                   {[
-                    { label: "VIRAL SCORE",  value: result.viralScore, color: result.viralScore >= 70 ? "#22C55E" : result.viralScore >= 40 ? "#F59E0B" : "#EF4444" },
+                    { label: "VIRAL SCORE",  value: result.viralScore, color: _utils.getViralRating(result.viralScore).color },
                     { label: "ORACLE GRADE", value: result.isBoring ? "MUNDANE" : "SOVEREIGN", color: result.isBoring ? "#F59E0B" : "#22C55E" },
                   ].map(s => (
                     <GlassPanel key={s.label} style={{ padding: 12 }}>
