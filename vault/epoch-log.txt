@@ -199,3 +199,4 @@
 2026-06-30T05:17:49Z | stacks_tip=8437906 | btc_anchor=956027 | status=active
 2026-06-30T06:40:56Z | stacks_tip=8438429 | btc_anchor=956032 | status=active
 2026-06-30T07:01:18Z | stacks_tip=8438568 | btc_anchor=956034 | status=active
+2026-06-30T08:46:54Z | stacks_tip=8439283 | btc_anchor=956047 | status=active
