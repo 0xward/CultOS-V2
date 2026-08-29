@@ -1028,3 +1028,4 @@
 2026-08-28T21:34:35Z | stacks_tip=8862554 | btc_anchor=964480 | status=active
 2026-08-28T23:34:33Z | stacks_tip=8863237 | btc_anchor=964494 | status=active
 2026-08-29T00:41:17Z | stacks_tip=8863699 | btc_anchor=964501 | status=active
+2026-08-29T02:52:58Z | stacks_tip=8864448 | btc_anchor=964517 | status=active
