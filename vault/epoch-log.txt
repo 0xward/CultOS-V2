@@ -1202,3 +1202,4 @@
 2026-09-10T01:29:28Z | stacks_tip=8953724 | btc_anchor=966291 | status=active
 2026-09-10T04:24:45Z | stacks_tip=8954572 | btc_anchor=966301 | status=active
 2026-09-10T05:59:59Z | stacks_tip=8954991 | btc_anchor=966311 | status=active
+2026-09-10T08:03:00Z | stacks_tip=8955548 | btc_anchor=966327 | status=active
